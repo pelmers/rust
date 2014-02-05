@@ -358,6 +358,17 @@ pub fn phase_3_run_analysis_passes(sess: Session,
     }
 }
 
+pub fn phase_dxr(sess: Session,
+                 crate: &ast::Crate,
+                 analysis: &CrateAnalysis,
+                 odir: &Option<Path>) {
+    if !sess.opts.save_analysis {
+        return;
+    }
+    time(sess.time_passes(), "dxr output", crate, |crate|
+         middle::dxr::process_crate(sess, crate, analysis, odir));
+}
+
 pub struct CrateTranslation {
     context: ContextRef,
     module: ModuleRef,
@@ -534,6 +545,7 @@ pub fn compile_input(sess: Session, cfg: ast::CrateConfig, input: &Input,
         if stop_after_phase_2(sess) { return; }
 
         let analysis = phase_3_run_analysis_passes(sess, &expanded_crate, ast_map);
+        phase_dxr(sess, &expanded_crate, &analysis, outdir);
         if stop_after_phase_3(sess) { return; }
         let trans = phase_4_translate_to_llvm(sess, expanded_crate,
                                               &analysis, &outputs);
@@ -814,6 +826,7 @@ pub fn build_session_options(matches: &getopts::Matches)
 
     let sysroot_opt = matches.opt_str("sysroot").map(|m| @Path::new(m));
     let target = matches.opt_str("target").unwrap_or(host_triple());
+    let save_analysis = matches.opt_present("save-analysis");
     let opt_level = {
         if (debugging_opts & session::NO_OPT) != 0 {
             No
@@ -857,6 +870,7 @@ pub fn build_session_options(matches: &getopts::Matches)
         optimize: opt_level,
         debuginfo: debuginfo,
         lint_opts: lint_opts,
+        save_analysis: save_analysis,
         output_types: output_types,
         addl_lib_search_paths: @RefCell::new(addl_lib_search_paths),
         maybe_sysroot: sysroot_opt,
@@ -1016,6 +1030,9 @@ pub fn optgroups() -> ~[getopts::OptGroup] {
                           AST nodes and blocks with IDs)", "TYPE"),
   optflagopt("", "dep-info",
                         "Output dependency info to <filename> after compiling", "FILENAME"),
+  optflag("", "save-analysis",
+                        "Write syntax and type analysis information
+                          in addition to normal output"),
   optopt("", "sysroot",
                         "Override the system root", "PATH"),
   optflag("", "test", "Build a test harness"),

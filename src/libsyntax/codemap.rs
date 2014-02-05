@@ -380,6 +380,17 @@ impl CodeMap {
                 a = m;
             }
         }
+        // There can be filemaps with length 0. These have the same start_pos as the previous
+        // filemap, but are not the filemaps we want (because they are length 0, they cannot
+        // contain what we are looking for). So, rewind until we find a useful filemap.
+        while a > 0 {
+            let lines = files[a].lines.borrow();
+            let lines = lines.get();
+            if lines.len() > 0 {
+                break;
+            }
+            a -= 1;
+        }
         if a >= len {
             fail!("position {} does not resolve to a source location", pos.to_uint())
         }
@@ -407,7 +418,7 @@ impl CodeMap {
         let FileMapAndLine {fm: f, line: a} = self.lookup_line(pos);
         let line = a + 1u; // Line numbers start at 1
         let chpos = self.bytepos_to_local_charpos(pos);
-        let mut lines = f.lines.borrow_mut();
+        let lines = f.lines.borrow();
         let linebpos = lines.get()[a];
         let linechpos = self.bytepos_to_local_charpos(linebpos);
         debug!("codemap: byte pos {:?} is on the line at byte pos {:?}",
@@ -434,7 +445,8 @@ impl CodeMap {
 
     // Converts an absolute BytePos to a CharPos relative to the file it is
     // located in
-    fn bytepos_to_local_charpos(&self, bpos: BytePos) -> CharPos {
+    // TODO[nrc] move to pub impl
+    pub fn bytepos_to_local_charpos(&self, bpos: BytePos) -> CharPos {
         debug!("codemap: converting {:?} to char pos", bpos);
         let idx = self.lookup_filemap_idx(bpos);
         let files = self.files.borrow();
