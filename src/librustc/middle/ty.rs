@@ -4868,7 +4868,7 @@ pub fn trait_id_of_impl(tcx: ctxt,
 /// ID of the impl that the method belongs to. Otherwise, return `None`.
 pub fn impl_of_method(tcx: ctxt, def_id: ast::DefId)
                        -> Option<ast::DefId> {
-    if def_id.crate != LOCAL_CRATE {
+    if def_id.krate != LOCAL_CRATE {
         return match csearch::get_method(tcx, def_id).container {
             TraitContainer(_) => None,
             ImplContainer(def_id) => Some(def_id),

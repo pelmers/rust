@@ -28,13 +28,13 @@ use std::str;
 use syntax::ast;
 use syntax::ast_util;
 use syntax::ast::{NodeId,DefId};
-use syntax::ast_map::{NodeItem,path_ident_to_str};
+use syntax::ast_map::{NodeItem};
 use syntax::attr;
 use syntax::codemap::*;
 use syntax::diagnostic;
 use syntax::parse::lexer;
 use syntax::parse::lexer::{Reader,StringReader};
-use syntax::parse::token::{get_ident_interner,get_ident,is_keyword,keywords,is_ident,Token,EOF,EQ,COLON,LT,GT,SHL,SHR,BINOP,LPAREN};
+use syntax::parse::token::{get_ident,is_keyword,keywords,is_ident,Token,EOF,EQ,COLON,LT,GT,SHL,SHR,BINOP,LPAREN};
 use syntax::visit;
 use syntax::visit::Visitor;
 use syntax::print::pprust::{path_to_str,ty_to_str};
@@ -114,11 +114,11 @@ impl SpanUtils {
         }        
     }
 
-    fn retokenise_span(&self, span: Span) -> @StringReader {
+    fn retokenise_span(&self, span: Span) -> StringReader {
         // sadness - we don't have spans for sub-expressions nor access to the tokens
         // so in order to get extents for the function name itself (which dxr expects)
         // we need to re-tokenise the fn definition
-        let handler = diagnostic::mk_handler(None);
+        let handler = diagnostic::mk_handler();
         let handler = diagnostic::mk_span_handler(handler, self.code_map);
 
         let filemap = self.code_map.new_filemap(~"<anon-dxr>",
@@ -520,7 +520,7 @@ impl <'l> DxrVisitor<'l> {
         // What could go wrong...?
         if spans.len() < path.segments.len() {
             println!("Miscalculated spans for path '{}'. Found {} spans, expected {}. Found spans:",
-                     path_to_str(path, get_ident_interner()), spans.len(), path.segments.len());
+                     path_to_str(path), spans.len(), path.segments.len());
             for s in spans.iter() {
                 println!("  '{}'", self.span.snippet(*s));
             }
@@ -535,7 +535,7 @@ impl <'l> DxrVisitor<'l> {
                                      global: path.global,
                                      segments: segs};
 
-            let qualname = path_to_str(&sub_path, get_ident_interner());
+            let qualname = path_to_str(&sub_path);
             result.push((spans[i], qualname));
         }
         result
@@ -617,7 +617,7 @@ impl <'l> DxrVisitor<'l> {
                            sub_span,
                            id,
                            qualname,
-                           path_to_str(p, get_ident_interner()));
+                           path_to_str(p));
             }
         }
     }
@@ -631,11 +631,11 @@ impl <'l> DxrVisitor<'l> {
         // The qualname for a method is the trait name or name of the struct in an impl in
         // which the method is declared in followed by the method's name.
         let qualname = match ty::impl_of_method(self.analysis.ty_cx, DefId{krate:0, node:method.id}) {
-            Some(impl_id) => match self.analysis.ty_cx.items.get(impl_id.node) {
-                NodeItem(item, _) => {
+            Some(impl_id) => match self.analysis.ty_cx.map.get(impl_id.node) {
+                NodeItem(item) => {
                     scope_id = item.id;
                     match item.node {
-                        ast::ItemImpl(_, _, ty, _) => ty_to_str(ty, get_ident_interner()) + "::",
+                        ast::ItemImpl(_, _, ty, _) => ty_to_str(ty) + "::",
                         _ => {
                             println!("Container {} for method {} not an impl?", impl_id.node, method.id);
                             ~"???::"                                
@@ -650,8 +650,8 @@ impl <'l> DxrVisitor<'l> {
             None => match ty::trait_of_method(self.analysis.ty_cx, DefId{krate:0, node:method.id}) {
                 Some(def_id) => {
                     scope_id = def_id.node;
-                    match self.analysis.ty_cx.items.get(def_id.node) {
-                        NodeItem(item, path) => path_ident_to_str(path, item.ident, get_ident_interner()) + "::",
+                    match self.analysis.ty_cx.map.get(def_id.node) {
+                        NodeItem(item) => self.analysis.ty_cx.map.path_to_str_with_ident(def_id.node, item.ident) + "::",
                         _ => {
                             println!("Could not find container {} for method {}", def_id.node, method.id);
                             ~"???::"
@@ -665,7 +665,7 @@ impl <'l> DxrVisitor<'l> {
             },
         };
 
-        let qualname = qualname + get_ident(method.ident.name).get();
+        let qualname = qualname + get_ident(method.ident).get();
 
         // record the decl for this def (if it has one)
         let decl_id = match ty::trait_method_of_method(self.analysis.ty_cx, DefId{krate:0, node:method.id}) {
@@ -702,8 +702,8 @@ impl <'l> DxrVisitor<'l> {
 
     fn process_struct_field_def(&mut self, field: &ast::StructField, qualname: &str, scope_id: NodeId) {
         match field.node.kind {
-            ast::NamedField(ref ident, _) => {
-                let name = get_ident(ident.name).get().to_owned();
+            ast::NamedField(ident, _) => {
+                let name = get_ident(ident).get().to_owned();
                 let qualname = qualname + "::" + name;
                 match self.span.sub_span_before_token(field.span, COLON) {
                     Some(sub_span) => field_str(self.recorder,
@@ -730,10 +730,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
 
         match item.node {
             ast::ItemFn(decl, _, _, _, body) => {
-                let qualname = match self.analysis.ty_cx.items.get(item.id) {
-                    NodeItem(_, path) => path_ident_to_str(path, item.ident, get_ident_interner()),
-                    _ => ~""
-                };
+                let qualname = self.analysis.ty_cx.map.path_to_str_with_ident(item.id, item.ident);
 
                 let sub_span = self.span.sub_span_after_keyword(item.span, keywords::Fn);
                 fn_str(self.recorder, self.span, item.span, sub_span, item.id, qualname, e.cur_scope);
@@ -752,10 +749,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                 // TODO walk type params
             },
             ast::ItemStatic(typ, mt, expr) => {
-                let qualname = match self.analysis.ty_cx.items.get(item.id) {
-                    NodeItem(_, path) => path_ident_to_str(path, item.ident, get_ident_interner()),
-                    _ => ~""
-                };
+                let qualname = self.analysis.ty_cx.map.path_to_str_with_ident(item.id, item.ident);
 
                 let value = match mt {
                     ast::MutMutable => ~"",
@@ -768,7 +762,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                            item.span,
                            sub_span,
                            item.id,
-                           get_ident(item.ident.name).get(),
+                           get_ident(item.ident).get(),
                            qualname,
                            value,
                            e.cur_scope);
@@ -778,10 +772,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                 self.visit_expr(expr, e);
             },
             ast::ItemStruct(def, ref _g) => {
-                let qualname = match self.analysis.ty_cx.items.get(item.id) {
-                    NodeItem(_, path) => path_ident_to_str(path, item.ident, get_ident_interner()),
-                    _ => ~""
-                };
+                let qualname = self.analysis.ty_cx.map.path_to_str_with_ident(item.id, item.ident);
 
                 let ctor_id = match def.ctor_id {
                     Some(node_id) => node_id,
@@ -806,10 +797,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                 // TODO walk type params
             },
             ast::ItemEnum(ref enum_definition, _) => {
-                let qualname = match self.analysis.ty_cx.items.get(item.id) {
-                    NodeItem(_, path) => path_ident_to_str(path, item.ident, get_ident_interner()),
-                    _ => ~""
-                };
+                let qualname = self.analysis.ty_cx.map.path_to_str_with_ident(item.id, item.ident);
                 match self.span.sub_span_after_keyword(item.span, keywords::Enum) {
                     Some(sub_span) => enum_str(self.recorder,
                                                self.span,
@@ -821,7 +809,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                     None => println!("Could not find subspan for enum {}", qualname),
                 }
                 for variant in enum_definition.variants.iter() {
-                    let name = get_ident(variant.node.name.name).get().to_owned();
+                    let name = get_ident(variant.node.name).get().to_owned();
                     let qualname = qualname + "::" + name;
                     let val = self.span.snippet(variant.span);
                     match variant.node.kind {
@@ -898,10 +886,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                 }
             },
             ast::ItemTrait(ref generics, ref trait_refs, ref methods) => {
-                let qualname = match self.analysis.ty_cx.items.get(item.id) {
-                    NodeItem(_, path) => path_ident_to_str(path, item.ident, get_ident_interner()),
-                    _ => ~""
-                };
+                let qualname = self.analysis.ty_cx.map.path_to_str_with_ident(item.id, item.ident);
 
                 let sub_span = self.span.sub_span_after_keyword(item.span, keywords::Trait);
                 trait_str(self.recorder, self.span, item.span, sub_span, item.id, qualname, e.cur_scope);
@@ -925,10 +910,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                 }
             },
             ast::ItemMod(ref m) => {
-                let qualname = match self.analysis.ty_cx.items.get(item.id) {
-                    NodeItem(_, path) => path_ident_to_str(path, item.ident, get_ident_interner()),
-                    _ => ~""
-                };
+                let qualname = self.analysis.ty_cx.map.path_to_str_with_ident(item.id, item.ident);
 
                 // For reasons I don't understand, if there are no items in a module
                 // then items is not in fact empty, but contains an empty item in the current
@@ -956,11 +938,8 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                 visit::walk_mod(self, m, DxrVisitorEnv::new_nested(item.id));
             },
             ast::ItemTy(ty, ref _g) => {
-                let qualname = match self.analysis.ty_cx.items.get(item.id) {
-                    NodeItem(_, path) => path_ident_to_str(path, item.ident, get_ident_interner()),
-                    _ => ~""
-                };
-                let value = ty_to_str(ty, get_ident_interner());
+                let qualname = self.analysis.ty_cx.map.path_to_str_with_ident(item.id, item.ident);
+                let value = ty_to_str(ty);
                 let sub_span = self.span.sub_span_after_keyword(item.span, keywords::Type);
                 typedef_str(self.recorder,
                             self.span,
@@ -998,12 +977,12 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                 let qualname = match ty::trait_of_method(self.analysis.ty_cx, DefId{krate:0, node:method_type.id}) {
                     Some(def_id) => {
                         scope_id = def_id.node;
-                        match self.analysis.ty_cx.items.get(def_id.node) {
-                            NodeItem(item, path) => path_ident_to_str(path, item.ident, get_ident_interner()) + "::",
+                        match self.analysis.ty_cx.map.get(scope_id) {
+                            NodeItem(item) => self.analysis.ty_cx.map.path_to_str_with_ident(scope_id, item.ident) + "::",
                             _ => {
-                                println!("Could not find trait {} for method {}", def_id.node, method_type.id);
+                                println!("Could not find trait {} for method {}", scope_id, method_type.id);
                                 ~"???::"
-                            }
+                            },
                         }
                     },
                     None => {
@@ -1012,7 +991,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                     },
                 };
 
-                let qualname = qualname + get_ident(method_type.ident.name).get();
+                let qualname = qualname + get_ident(method_type.ident).get();
 
                 let sub_span = self.span.sub_span_after_keyword(method_type.span, keywords::Fn);
                 method_decl_str(self.recorder,
@@ -1066,7 +1045,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                                           vp.span,
                                           sub_span,
                                           id, mod_id,
-                                          get_ident(ident.name).get(),
+                                          get_ident(ident).get(),
                                           e.cur_scope);
                             self.write_sub_paths_truncated(path, e.cur_scope);
                         }
@@ -1087,7 +1066,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                 }
             },
             ast::ViewItemExternMod(ident, ref s, id) => {
-                let name = get_ident(ident.name).get().to_owned();
+                let name = get_ident(ident).get().to_owned();
                 let s = match *s {
                     Some((ref s, _)) => s.get().to_owned(),
                     None => name.to_owned(),
@@ -1143,7 +1122,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
         }
 
         match ex.node {
-            ast::ExprCall(_f, ref _args, _) => {
+            ast::ExprCall(_f, ref _args) => {
                 // Don't need to do anything for function calls,
                 // because just walking the callee path does what we want.
                 visit::walk_expr(self, ex, e);
@@ -1245,7 +1224,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                 }
                 visit::walk_expr_opt(self, base, e)
             },
-            ast::ExprMethodCall(_, _, _, ref args, _) => {
+            ast::ExprMethodCall(_, _, _, ref args) => {
                 let method_map = self.analysis.maps.method_map.borrow();
                 let method = method_map.get().get(&ex.id);
                 match method.origin {
@@ -1413,7 +1392,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                                                        p.span,
                                                        sub_span,
                                                        id,
-                                                       path_to_str(p, get_ident_interner()),
+                                                       path_to_str(p),
                                                        value),
                 ast::DefVariant(_,id,_) => ref_str(self.recorder,
                                                    self.span,
@@ -1458,7 +1437,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                          p.span,
                          sub_span,
                          id,
-                         path_to_str(p, get_ident_interner()),
+                         path_to_str(p),
                          value);
         }
 
