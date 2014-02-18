@@ -359,14 +359,14 @@ pub fn phase_3_run_analysis_passes(sess: Session,
 }
 
 pub fn phase_dxr(sess: Session,
-                 crate: &ast::Crate,
+                 krate: &ast::Crate,
                  analysis: &CrateAnalysis,
                  odir: &Option<Path>) {
     if !sess.opts.save_analysis {
         return;
     }
-    time(sess.time_passes(), "dxr output", crate, |crate|
-         middle::dxr::process_crate(sess, crate, analysis, odir));
+    time(sess.time_passes(), "dxr output", krate, |krate|
+         middle::dxr::process_crate(sess, krate, analysis, odir));
 }
 
 pub struct CrateTranslation {

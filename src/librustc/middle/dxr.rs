@@ -370,7 +370,7 @@ fn method_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Option<Sp
     };
     rec.record(match decl_id {
         Some(decl_id) => format!("function,{},qualname,\"{}\",id,{},declid,{},declidcrate,{},scopeid,{}\n",
-            su.extent_str(span, Some(sub_span)), escape(name), id, decl_id.node, decl_id.crate, scope_id),
+            su.extent_str(span, Some(sub_span)), escape(name), id, decl_id.node, decl_id.krate, scope_id),
         None => format!("function,{},qualname,\"{}\",id,{},scopeid,{}\n",
             su.extent_str(span, Some(sub_span)), escape(name), id, scope_id),
     });
@@ -402,7 +402,7 @@ fn trait_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Option<Spa
 
 fn impl_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Span, id: NodeId, ref_id: DefId, scope_id: NodeId) {
     rec.record(format!("impl,{},id,{},refid,{},refidcrate,{},scopeid,{}\n",
-                       su.extent_str(span, Some(sub_span)), id, ref_id.node, ref_id.crate, scope_id));
+                       su.extent_str(span, Some(sub_span)), id, ref_id.node, ref_id.krate, scope_id));
 }
 
 fn mod_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Option<Span>, id: NodeId, name: &str, parent: NodeId, filename: &str) {
@@ -415,7 +415,7 @@ fn mod_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Option<Span>
 
 fn mod_alias_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Span, id: NodeId, mod_id: DefId, name: &str, parent: NodeId) {
     rec.record(format!("module_alias,{},id,{},refid,{},refidcrate,{},name,{},scopeid,{}\n",
-                       su.extent_str(span, Some(sub_span)), id, mod_id.node, mod_id.crate, name, parent));
+                       su.extent_str(span, Some(sub_span)), id, mod_id.node, mod_id.krate, name, parent));
 }
 
 fn extern_mod_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Option<Span>, id: NodeId, cnum: ast::CrateNum, name: &str, loc: &str, parent: NodeId) {
@@ -428,21 +428,21 @@ fn extern_mod_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Optio
 
 fn ref_str(rec: &mut Recorder, su: SpanUtils, kind: &str, span: Span, sub_span: Span, id: DefId) {
     rec.record(format!("{},{},refid,{},refidcrate,{}\n",
-                       kind, su.extent_str(span, Some(sub_span)), id.node, id.crate));
+                       kind, su.extent_str(span, Some(sub_span)), id.node, id.krate));
 }
 
 fn fn_call_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Span, id: DefId, scope_id:NodeId) {
     rec.record(format!("fn_call,{},refid,{},refidcrate,{},scopeid,{}\n",
-                       su.extent_str(span, Some(sub_span)), id.node, id.crate, scope_id));
+                       su.extent_str(span, Some(sub_span)), id.node, id.krate, scope_id));
 }
 
 fn meth_call_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Option<Span>, defid: DefId, declid: Option<DefId>, scope_id:NodeId) {
     match sub_span {
         Some(sub_span) => rec.record(match declid {
             Some(declid) => format!("method_call,{},refid,{},refidcrate,{},declid,{},declidcrate,{},scopeid,{}\n",
-                su.extent_str(span, Some(sub_span)), defid.node, defid.crate, declid.node, declid.crate, scope_id),
+                su.extent_str(span, Some(sub_span)), defid.node, defid.krate, declid.node, declid.krate, scope_id),
             None => format!("method_call,{},refid,{},refidcrate,{},scopeid,{}\n",
-                su.extent_str(span, Some(sub_span)), defid.node, defid.crate, scope_id),
+                su.extent_str(span, Some(sub_span)), defid.node, defid.krate, scope_id),
         }),
         None => println!("(meth_call_str) Could not find sub_span in `{}`", su.snippet(span)),
     }    
@@ -450,7 +450,7 @@ fn meth_call_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Option
 
 fn mod_ref_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Option<Span>, id: DefId, parent:NodeId) {
     rec.record(format!("mod_ref,{},refid,{},refidcrate,{},qualname,,scopeid,{}\n",
-                       su.extent_str(span, sub_span), id.node, id.crate, parent));
+                       su.extent_str(span, sub_span), id.node, id.krate, parent));
 }
 
 fn sub_mod_ref_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Span, qualname: &str, parent:NodeId) {
@@ -465,7 +465,7 @@ fn sub_type_ref_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Spa
 
 fn inherit_str(rec: &mut Recorder, _: SpanUtils, base_id: DefId, deriv_id: NodeId) {
     rec.record(format!("inheritance,base,{},basecrate,{},derived,{},derivedcrate,0\n",
-                       base_id.node, base_id.crate, deriv_id));
+                       base_id.node, base_id.krate, deriv_id));
 }
 
 fn typedef_str(rec: &mut Recorder, su: SpanUtils, span: Span, sub_span: Option<Span>, id: NodeId, qualname: &str, value: &str) {
@@ -497,13 +497,13 @@ struct DxrVisitor<'l> {
 }
 
 impl <'l> DxrVisitor<'l> {
-    fn dump_crate_info(&mut self, name: &str, crate: &ast::Crate) {
+    fn dump_crate_info(&mut self, name: &str, krate: &ast::Crate) {
         // the current crate
-        crate_str(self.recorder, self.span, crate.span, name);
+        crate_str(self.recorder, self.span, krate.span, name);
 
         // dump info about all the external crates referenced from this crate
         self.analysis.ty_cx.cstore.iter_crate_data(|n, cmd| {
-            external_crate_str(self.recorder, self.span, crate.span, cmd.name, n);
+            external_crate_str(self.recorder, self.span, krate.span, cmd.name, n);
         });
         self.recorder.record("end_external_crates\n");
     }
@@ -630,7 +630,7 @@ impl <'l> DxrVisitor<'l> {
         let mut scope_id = 0;
         // The qualname for a method is the trait name or name of the struct in an impl in
         // which the method is declared in followed by the method's name.
-        let qualname = match ty::impl_of_method(self.analysis.ty_cx, DefId{crate:0, node:method.id}) {
+        let qualname = match ty::impl_of_method(self.analysis.ty_cx, DefId{krate:0, node:method.id}) {
             Some(impl_id) => match self.analysis.ty_cx.items.get(impl_id.node) {
                 NodeItem(item, _) => {
                     scope_id = item.id;
@@ -647,7 +647,7 @@ impl <'l> DxrVisitor<'l> {
                     ~"???::"                                
                 },
             },
-            None => match ty::trait_of_method(self.analysis.ty_cx, DefId{crate:0, node:method.id}) {
+            None => match ty::trait_of_method(self.analysis.ty_cx, DefId{krate:0, node:method.id}) {
                 Some(def_id) => {
                     scope_id = def_id.node;
                     match self.analysis.ty_cx.items.get(def_id.node) {
@@ -668,7 +668,7 @@ impl <'l> DxrVisitor<'l> {
         let qualname = qualname + get_ident(method.ident.name).get();
 
         // record the decl for this def (if it has one)
-        let decl_id = match ty::trait_method_of_method(self.analysis.ty_cx, DefId{crate:0, node:method.id}) {
+        let decl_id = match ty::trait_method_of_method(self.analysis.ty_cx, DefId{krate:0, node:method.id}) {
             Some(def_id) => if method.id != def_id.node && def_id.node == 0 {
                 Some(def_id)
             } else {
@@ -995,7 +995,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
         match *tm {
             ast::Required(ref method_type) => {
                 let mut scope_id = 0;
-                let qualname = match ty::trait_of_method(self.analysis.ty_cx, DefId{crate:0, node:method_type.id}) {
+                let qualname = match ty::trait_of_method(self.analysis.ty_cx, DefId{krate:0, node:method_type.id}) {
                     Some(def_id) => {
                         scope_id = def_id.node;
                         match self.analysis.ty_cx.items.get(def_id.node) {
@@ -1051,7 +1051,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                                     mod_ref_str(self.recorder, self.span, vp.span, Some(sub_span), id, e.cur_scope);
                                     id
                                 },
-                                None => DefId{node:0, crate:0},
+                                None => DefId{node:0, krate:0},
                             };
 
                             // 'use' always introduces a module alias, if there is not an explicit
@@ -1160,29 +1160,29 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                     ast::DefLocal(id, _) |
                     ast::DefArg(id, _) |
                     ast::DefUpvar(id, _, _, _) |
-                    ast::DefBinding(id, _) => ref_str(self.recorder, self.span, "var_ref", ex.span, sub_span, DefId{node:id, crate:0}),
+                    ast::DefBinding(id, _) => ref_str(self.recorder, self.span, "var_ref", ex.span, sub_span, DefId{node:id, krate:0}),
                     ast::DefStatic(def_id,_) => ref_str(self.recorder, self.span, "var_ref", ex.span, sub_span, def_id),
                     ast::DefStruct(def_id) => ref_str(self.recorder, self.span, "struct_ref", ex.span, sub_span, def_id),
                     ast::DefStaticMethod(declid, provenence, _) => {
-                        let defid = if declid.crate == ast::LOCAL_CRATE {
+                        let defid = if declid.krate == ast::LOCAL_CRATE {
                             let methods = self.analysis.ty_cx.methods.borrow();
                             let m = methods.get().get(&declid);
                             match provenence {
                                 ast::FromTrait(def_id) =>
                                     match ty::trait_methods(self.analysis.ty_cx, def_id).iter().find(|mr| mr.ident.name == m.ident.name) {
                                             Some(mr) => mr.def_id,
-                                            None => DefId{crate:0,node:0},
+                                            None => DefId{krate:0,node:0},
                                     },
                                 ast::FromImpl(def_id) => {
                                     let impls = self.analysis.ty_cx.impls.borrow();
                                     match impls.get().get(&def_id).methods.iter().find(|mr| mr.ident.name == m.ident.name) {
                                         Some(mr) => mr.def_id,
-                                        None => DefId{crate:0,node:0},
+                                        None => DefId{krate:0,node:0},
                                     }
                                 }
                             }
                         } else {
-                            DefId{crate:0,node:0}
+                            DefId{krate:0,node:0}
                         };
                         meth_call_str(self.recorder, self.span, ex.span, Some(sub_span), defid, Some(declid), e.cur_scope);
                     },
@@ -1262,7 +1262,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                         // method invoked on a type parameter
                         let method = ty::trait_method(self.analysis.ty_cx, mp.trait_id, mp.method_num);
                         let sub_span = self.span.sub_span_for_fn_name(ex.span);
-                        meth_call_str(self.recorder, self.span, ex.span, sub_span, DefId{node:0,crate:0}, Some(method.def_id), e.cur_scope);
+                        meth_call_str(self.recorder, self.span, ex.span, sub_span, DefId{node:0,krate:0}, Some(method.def_id), e.cur_scope);
                     },
                     typeck::method_object(mo) => {
                         // method invoked on a trait instance
@@ -1270,7 +1270,7 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                         let sub_span = self.span.sub_span_for_fn_name(ex.span);
                         // We don't know where object methods are defined since they are staticaly
                         // dispatched, so pass 0 as the definition id.
-                        meth_call_str(self.recorder, self.span, ex.span, sub_span, DefId{node:0,crate:0}, Some(method.def_id), e.cur_scope);
+                        meth_call_str(self.recorder, self.span, ex.span, sub_span, DefId{node:0,krate:0}, Some(method.def_id), e.cur_scope);
                     },
                 }
 
@@ -1483,12 +1483,12 @@ impl DxrVisitorEnv {
 }
 
 pub fn process_crate(sess: Session,
-                     crate: &ast::Crate,
+                     krate: &ast::Crate,
                      analysis: &CrateAnalysis,
                      odir: &Option<Path>) {
     // TODO need to stick a random number on the end or something incase there
     // are multiple unknown crates
-    let (cratename, crateid) = match attr::find_crateid(crate.attrs) {
+    let (cratename, crateid) = match attr::find_crateid(krate.attrs) {
         Some(crateid) => (crateid.name.clone(), crateid.to_str()),
         None => (~"unknown_crate",~"unknown_crate"),
     };
@@ -1538,7 +1538,7 @@ pub fn process_crate(sess: Session,
                                  recorder: ~Recorder{ out: output_file as ~Writer },
                                  span: SpanUtils{ code_map: sess.codemap}};
 
-    visitor.dump_crate_info(cratename, crate);
+    visitor.dump_crate_info(cratename, krate);
 
-    visit::walk_crate(&mut visitor, crate, DxrVisitorEnv::new());
+    visit::walk_crate(&mut visitor, krate, DxrVisitorEnv::new());
 }
