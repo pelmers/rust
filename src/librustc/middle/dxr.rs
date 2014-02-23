@@ -34,7 +34,7 @@ use syntax::codemap::*;
 use syntax::diagnostic;
 use syntax::parse::lexer;
 use syntax::parse::lexer::{Reader,StringReader};
-use syntax::parse::token::{get_ident,is_keyword,keywords,is_ident,Token,EOF,EQ,COLON,LT,GT,SHL,SHR,BINOP,LPAREN,COMMA};
+use syntax::parse::token::{get_ident,is_keyword,keywords,is_ident,Token,EOF,EQ,COLON,LT,GT,SHL,SHR,BINOP,LPAREN};
 use syntax::visit;
 use syntax::visit::Visitor;
 use syntax::print::pprust::{path_to_str,ty_to_str};
@@ -214,34 +214,56 @@ impl SpanUtils {
         return sub_spans;
     }
 
+    // Reparse span and return an owned vector of sub spans of the first limit 
+    // identifier tokens in the given nesting level.
+    // example with Foo<Bar<T,V>, Bar<T,V>>
+    // Nesting = 0: all idents outside of brackets: ~[Foo]
+    // Nesting = 1: idents within one level of brackets: ~[Bar, Bar]
+    fn spans_with_brackets(&self, span: Span, nesting: int, limit: int) -> ~[Span] {
+        let mut result: ~[Span] = ~[];
+
+        let toks = self.retokenise_span(span);
+        // We keep track of how many brackets we're nested in
+        let mut bracket_count = 0;
+        loop {
+            let ts = toks.next_token();
+            if ts.tok == EOF {
+                if bracket_count != 0 {
+                    println!("Mis-counted brackets when breaking path? Parsing '{}'", self.snippet(span));
+                }
+                return result
+            }
+            if (result.len() as int) == limit {
+                return result;
+            }
+            if ts.tok == LT {
+                bracket_count += 1;
+            }
+            if ts.tok == GT {
+                bracket_count -= 1;
+            }
+            if ts.tok == BINOP(SHL) {
+                bracket_count += 2;
+            }
+            if ts.tok == BINOP(SHR) {
+                bracket_count -= 2;
+            }
+            if is_ident(&ts.tok) &&
+               bracket_count == nesting {
+                result.push(ts.sp);
+            }
+        }
+    }
+
     // Return an owned vector of the subspans of the param identifier
     // tokens found in span.
-    fn spans_for_ty_params(&self, span: Span) -> ~[Span] {
-        let mut sub_spans : ~[Span] = ~[];
-        let toks = self.retokenise_span(span);
-        let mut prev = toks.next_token();
-        let mut next = toks.next_token();
-        // we keep track of which <> we're currently in.
-        // we only want param idents in the outer <>, e.g:
-        // fn<T:Add<T,T>> foo() <-- only the first T
-        let mut in_correct_ltgt = false;
-        while next.tok != EOF {
-            if prev.tok == LT {
-                if !in_correct_ltgt && is_ident(&next.tok) {
-                    sub_spans.push(next.sp);
-                }
-                in_correct_ltgt = !in_correct_ltgt;
-            }
-            if prev.tok == GT {
-                in_correct_ltgt = !in_correct_ltgt;
-            }
-            if prev.tok == COMMA && is_ident(&next.tok) && in_correct_ltgt {
-                sub_spans.push(next.sp);
-            }
-            prev = next;
-            next = toks.next_token();
+    fn spans_for_ty_params(&self, span: Span, number: int) -> ~[Span] {
+        if generated_code(span) {
+            return ~[]
         }
-        return sub_spans;
+        // Type params are nested within one level of brackets:
+        // i.e. we want ~[A, B] from Foo<A, B<T,U>>
+        self.spans_with_brackets(span, 1, number)
     }
 
     fn sub_span_after_keyword(&self, span: Span, keyword: keywords::Keyword) -> Option<Span> {
@@ -267,41 +289,10 @@ impl SpanUtils {
     fn spans_for_path_segments(&self, path: &ast::Path) -> ~[Span] {
         // TODO we do seem to get paths with unbalanced brackets - are these bad
         // spans?
-
         if generated_code(path.span) {
             return ~[]
         }
-
-        let mut result: ~[Span] = ~[];
-
-        let toks = self.retokenise_span(path.span);
-        // Only track spans for tokens outside of <...> so we don't get type vars
-        let mut bracket_count = 0;
-        loop {
-            let ts = toks.next_token();
-            if ts.tok == EOF {
-                if bracket_count != 0 {
-                    println!("Mis-counted brackets when breaking path? Parsing '{}'", self.snippet(path.span));
-                }
-                return result
-            }
-            if ts.tok == LT {
-                bracket_count += 1;
-            }
-            if ts.tok == GT {
-                bracket_count -= 1;
-            }
-            if ts.tok == BINOP(SHL) {
-                bracket_count += 2;
-            }
-            if ts.tok == BINOP(SHR) {
-                bracket_count -= 2;
-            }
-            if is_ident(&ts.tok) &&
-               bracket_count == 0 {
-                result.push(ts.sp);
-            }
-        }
+        self.spans_with_brackets(path.span, 0, -1)
     }
 }
 
@@ -771,27 +762,28 @@ impl <'l> DxrVisitor<'l> {
 
     // Dump generic params bindings, then visit_generics
     fn process_generic_params(&mut self, generics:&ast::Generics,
-                            full_span: Span,
-                            prefix: &str,
-                            id: NodeId,
-                            e: DxrVisitorEnv) {
-        // can't only use visit_generics since we don't have spans for param bindings,
-        // so we reparse the full_span to get those sub spans
-        let param_sub_spans = self.span.spans_for_ty_params(full_span);
-        let mut span_num = 0;
-        for param in generics.ty_params.iter() {
-            // append $id to name to make sure each one is unique
+                              full_span: Span,
+                              prefix: &str,
+                              id: NodeId,
+                              e: DxrVisitorEnv) {
+        // We can't only use visit_generics since we don't have spans for param bindings,
+        // so we reparse the full_span to get those sub spans.
+        // However full span is the entire enum/fn/struct block, so we only want the first few
+        // to match the number of generics we're looking for.
+        let param_sub_spans = self.span.spans_for_ty_params(full_span,
+                                                           (generics.ty_params.len() as int));
+        for (param, param_ss) in generics.ty_params.iter().zip(param_sub_spans.iter()) {
+            // Append $id to name to make sure each one is unique
             let name = format!("{}::{}${}",
                                prefix,
-                               escape(self.span.snippet(param_sub_spans[span_num])),
+                               escape(self.span.snippet(*param_ss)),
                                id.to_str());
             typedef_str(self.recorder, self.span,
                         full_span,
-                        Some(param_sub_spans[span_num]),
+                        Some(*param_ss),
                         param.id,
                         name,
                         "");
-            span_num += 1;
         }
         self.visit_generics(generics, e);
     }
@@ -1339,8 +1331,6 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
 
                 // walk receiver and args
                 visit::walk_exprs(self, *args, e);
-
-                // TODO type params <-- ?
             },
             ast::ExprField(sub_ex, ident, _) => {
                 self.visit_expr(sub_ex, e);
