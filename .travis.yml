@@ -1,0 +1,24 @@
+# Use something that's not 'ruby' so we don't set up things like
+# RVM/bundler/ruby and whatnot. Right now 'rust' as a language actually
+# downloads a rust/cargo snapshot, which we don't really want for building rust.
+language: c
+sudo: false
+
+# The test suite is in general way too stressful for travis, especially in
+# terms of time limit and reliability. In the past we've tried to scale things
+# back to only build the stage1 compiler and run a subset of tests, but this
+# didn't end up panning out very well.
+#
+# As a result, we're just using travis to run `make tidy` now. It'll help
+# everyone find out about their trailing spaces early on!
+before_script:
+  - ./configure --llvm-root=path/to/nowhere
+script:
+  - make tidy
+
+notifications:
+  email: false
+
+branches:
+  only:
+    - master
